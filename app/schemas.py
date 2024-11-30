@@ -61,4 +61,4 @@ class TradingResult(TradingResultBase):
                                  description="Дата последнего обновления записи")
 
     class Config:
-        orm_mode = True
+        from_attributes = True

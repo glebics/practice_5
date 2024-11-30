@@ -1,7 +1,9 @@
 fastapi 
 uvicorn 
 sqlalchemy 
-asyncpg 
+asyncpg
+greenlet
 aioredis 
 pydantic 
+pydantic_settings
 python-dotenv

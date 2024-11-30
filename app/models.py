@@ -3,6 +3,7 @@ from typing import Optional
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from sqlalchemy.sql import func
 from .database import Base  # Импорт базового класса
+import datetime
 
 
 class SpimexTradingResultAsync(Base):
