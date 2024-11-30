@@ -1,7 +1,5 @@
 # app/main.py
 
-from . import crud, schemas
-from datetime import datetime
 import asyncio
 import logging
 from datetime import datetime, date, time, timedelta
@@ -15,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .cache import set_cache, get_cache, flush_cache
 from .database import get_db
-from . import crud, models, schemas
+from . import crud, schemas
 
 # Настройка логирования
 logging.basicConfig(
@@ -34,7 +32,6 @@ app = FastAPI(title="Spimex Trading Results API")
 async def startup_event() -> None:
     """
     Обработчик события запуска приложения.
-
     Запускает асинхронную задачу для планирования сброса кэша каждый день в 14:11.
     """
     logger.info("Запуск приложения и инициализация задач.")
@@ -51,7 +48,8 @@ async def schedule_cache_flush() -> None:
         if now > flush_time:
             flush_time += timedelta(days=1)
         wait_seconds = (flush_time - now).total_seconds()
-        logger.info(f"Запланирован сброс кэша через {wait_seconds} секунд.")
+        logger.info(
+            f"Запланирован сброс кэша через {wait_seconds:.2f} секунд.")
         await asyncio.sleep(wait_seconds)
         await flush_cache()
         logger.info("Кэш Redis был сброшен в 14:11.")
@@ -97,10 +95,11 @@ async def get_last_trading_dates(
     Returns:
         List[date]: Список дат последних торговых дней.
     """
+    logger.info(f"Вызов эндпоинта /get_last_trading_dates с limit={limit}")
     cache_key = f"last_trading_dates:{limit}"
     cached = await get_cache(cache_key)
     if cached:
-        logger.info(f"Кэш найден для ключа {cache_key}")
+        logger.info(f"Кэш найден для ключа {cache_key}: {cached}")
         try:
             # Преобразование строковых дат обратно в объекты date
             return [datetime.fromisoformat(date_str).date() for date_str in cached]
@@ -112,8 +111,10 @@ async def get_last_trading_dates(
 
     # Получение данных из базы данных
     dates = await crud.get_last_trading_dates(db, limit)
+    logger.info(f"Получены даты из базы данных: {dates}")
     # Преобразование объектов date в строковый формат для кэширования
     dates_str = [d.isoformat() for d in dates]
+    logger.info(f"Сериализованные даты для кэша: {dates_str}")
     await set_cache(cache_key, dates_str, expire=get_seconds_until_flush())
     logger.info(f"Кэш установлен для ключа {cache_key}")
     return dates
@@ -154,7 +155,20 @@ async def get_dynamics(
     """
     logger.info(
         f"Вызов эндпоинта /get_dynamics с параметрами oil_id={oil_id}, delivery_type_id={delivery_type_id}, delivery_basis_id={delivery_basis_id}, start_date={start_date}, end_date={end_date}")
+    cache_key = f"dynamics:{oil_id}:{delivery_type_id}:{delivery_basis_id}:{start_date}:{end_date}"
+    cached = await get_cache(cache_key)
+    if cached:
+        logger.info(f"Кэш найден для ключа {cache_key}")
+        try:
+            # Преобразование словарей обратно в объекты TradingResult
+            return [schemas.TradingResult(**item) for item in cached]
+        except Exception as e:
+            logger.error(f"Ошибка преобразования данных из кэша: {e}")
+            # В случае ошибки преобразования удаляем некорректный кэш
+            await flush_cache()
+            logger.info("Некорректный кэш был очищен.")
 
+    # Получение данных из базы данных
     trading_results = await crud.get_dynamics(
         db,
         oil_id,
@@ -163,10 +177,14 @@ async def get_dynamics(
         start_date,
         end_date
     )
-    logger.info(f"Получены торговые результаты: {trading_results}")
-
+    logger.info(
+        f"Получены торговые результаты из базы данных: {trading_results}")
     # Преобразование объектов модели в Pydantic схемы
     results = [schemas.TradingResult.from_orm(tr) for tr in trading_results]
+    # Преобразование Pydantic схем в словари для кэширования
+    results_dict = [result.dict() for result in results]
+    await set_cache(cache_key, results_dict, expire=get_seconds_until_flush())
+    logger.info(f"Кэш установлен для ключа {cache_key}")
     return results
 
 
@@ -204,17 +222,22 @@ async def get_trading_results(
     Returns:
         List[schemas.TradingResult]: Список последних торговых результатов.
     """
+    logger.info(
+        f"Вызов эндпоинта /get_trading_results с параметрами oil_id={oil_id}, delivery_type_id={delivery_type_id}, delivery_basis_id={delivery_basis_id}, limit={limit}")
     cache_key = f"trading_results:{oil_id}:{delivery_type_id}:{delivery_basis_id}:{limit}"
     cached = await get_cache(cache_key)
     if cached:
         logger.info(f"Кэш найден для ключа {cache_key}")
         try:
+            # Преобразование словарей обратно в объекты TradingResult
             return [schemas.TradingResult(**item) for item in cached]
         except Exception as e:
             logger.error(f"Ошибка преобразования данных из кэша: {e}")
+            # В случае ошибки преобразования удаляем некорректный кэш
             await flush_cache()
             logger.info("Некорректный кэш был очищен.")
 
+    # Получение данных из базы данных
     trading_results = await crud.get_trading_results(
         db,
         oil_id,
@@ -222,7 +245,11 @@ async def get_trading_results(
         delivery_basis_id,
         limit
     )
+    logger.info(
+        f"Получены торговые результаты из базы данных: {trading_results}")
+    # Преобразование объектов модели в Pydantic схемы
     results = [schemas.TradingResult.from_orm(tr) for tr in trading_results]
+    # Преобразование Pydantic схем в словари для кэширования
     results_dict = [result.dict() for result in results]
     await set_cache(cache_key, results_dict, expire=get_seconds_until_flush())
     logger.info(f"Кэш установлен для ключа {cache_key}")
