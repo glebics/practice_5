@@ -1,9 +1,11 @@
 # app/database.py
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from typing import AsyncGenerator
+
 from .settings import async_settings
 from sqlalchemy.ext.declarative import declarative_base
-from typing import AsyncGenerator
 
 # Создание асинхронного движка
 engine = create_async_engine(
